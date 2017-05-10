@@ -1,5 +1,7 @@
 # Security Panel
 An extension for simple 4 zone Security panel using esp8266
+Tested with Pyronix Sterling compact but probably could be used with other
+wired security panels.
 
 Monitors 4 zones + 1 Alarm trigger signal
 Sends IFTTT notification when Alarm trigger changes state
@@ -7,6 +9,10 @@ Built in simple web page mainly for testing request and notification
 Status of signals on web page ip/status
 Recent events on web page ip/recent
 Expand sensors beyond 4 zones wirelessly
+	2 terminals provided to put in series with existing sensor.
+	Normally low resistance, Open circuit when set wirelessly
+	Expansion+ should be wired to the positive board terminal of an existing zone
+	Expansion-should be wired to sensor lead taken from that terminal.
 
 Config
   Edit IRBlasterWeb.ino
