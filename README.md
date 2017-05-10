@@ -15,7 +15,7 @@ Expand sensors beyond 4 zones wirelessly
 	Expansion-should be wired to sensor lead taken from that terminal.
 
 Config
-  Edit IRBlasterWeb.ino
+  Edit SecurityPanel.ino
 	Wifi set up
       AP_SSID Local network ssid
 	  AP_PASSWORD 
