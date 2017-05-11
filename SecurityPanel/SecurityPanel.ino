@@ -29,7 +29,7 @@
 #define AP_AUTHID "1234"
 
 //IFTT and request key words
-#define MAKER_KEY "key"
+#define MAKER_KEY "ifttMakerKey"
 #define EVENT_NAME "security" // Name of IFTTT trigger
 #define ZONE_SET "zoneSet" // sets zone override
 
@@ -62,9 +62,10 @@ char statString[32];
 #define ZONE2 2
 #define ZONE3 3
 #define ZONE4 4
+#define ADC_CAL 1.080
 int iPins[INPUT_COUNT]  = {12,5,4,0,14};
 int iPinValues[INPUT_COUNT];
-float battery_mult = 10.47/0.47*1.2/1024;//resistor divider, vref, max count
+float battery_mult = 10.47/0.47*ADC_CAL/1024;//resistor divider, vref, max count
 float battery_volts = 12.0;
 int zoneOverridePin = 13;
 int zoneOverrideState = 0;
@@ -183,14 +184,22 @@ Serial.println("Main page requested");
 char* statusString(int i, int iValue) {
 	if(i == BELL) {
 		strcpy(statString,"Alarm");
-	} else {
+	} else if(i<INPUT_COUNT) {
 		strcpy(statString,"Zone");
 		statString[4] = 48+i;
+		statString[5] = 0;
+	} else if(i<100) {
+		strcpy(statString,"Exp ");
+		statString[4] = 48+(i-INPUT_COUNT)/10;
+		statString[5] = 48+(i-INPUT_COUNT)%10;
+		statString[6] = 0;
+	} else {
+		strcpy(statString,"Unknown");
 	}
 	if(iValue == 1)
-		strcpy(statString+5, " = HIGH<BR>");
+		strcpy(statString+strlen(statString), " = HIGH<BR>");
 	else
-		strcpy(statString+5, " = LOW<BR>");
+		strcpy(statString+strlen(statString), " = LOW<BR>");
 	return statString;
 }
 
@@ -260,8 +269,8 @@ void request() {
 		Serial.println("Unauthorized notify request");
 		server.send(401, "text/html", "Unauthorized");
 	} else if(server.arg("event") == ZONE_SET) {
-		zoneSet(server.arg("value1").toInt());
-		server.send(200, "text/html", "zone set " + server.arg("value1"));
+		zoneSet(server.arg("value1").toInt(),server.arg("value2").toInt());
+		server.send(200, "text/html", "zone set " + server.arg("value1") + " " +server.arg("value2"));
 	} else {
 		Serial.print("Notify test request:");
 		Serial.print(server.arg("event"));
@@ -281,10 +290,11 @@ void request() {
 /*
  Handle zone set request
 */
-void zoneSet(int zoneValue) {
-    Serial.println("Set Zone override to " + String(zoneValue));
+void zoneSet(int zoneValue, int zoneDevice) {
+    Serial.println("Set Zone override to " + String(zoneValue) + " " + String(zoneDevice));
 	digitalWrite(zoneOverridePin, zoneValue);
 	zoneOverrideState = zoneValue;
+	addRecentEvent(INPUT_COUNT+zoneDevice, zoneValue);
 }
 
 /*

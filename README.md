@@ -24,6 +24,15 @@ Config
 	AP_AUTHID Pincode or password to authorise web commands
 	update_username user for updating firmware
 	update_password
+  IFTTT notification
+	Register with IFTTT
+	Get IFTTT app on phone
+	Add Maker channel and get key
+	Edit ifttt maker key in ino
+	Add an ifttt action with maker web request
+      IF event 'security'
+	  THEN action send notification from IFTTT app
+	     {{OccurredAt}} "{{EventName}}" occurred {{Value1}} {{Value2}} {{Value3}} 
 	
 Expansion
   Post to ip/request with auth=AP_AUTHID event="zoneSet" value1=0/1 (off/on)
