@@ -29,7 +29,7 @@
 #define AP_AUTHID "1234"
 
 //IFTT and request key words
-#define MAKER_KEY "ifttMakerKey"
+#define MAKER_KEY "MakerKey"
 #define EVENT_NAME "security" // Name of IFTTT trigger
 #define ZONE_SET "zoneSet" // sets zone override
 
@@ -46,7 +46,7 @@ ESP8266HTTPUpdateServer httpUpdater;
 
 //History
 #define NAME_LEN 16
-#define MAX_RECENT 32
+#define MAX_RECENT 64
 int recentPin[MAX_RECENT];
 int recentPinValue[MAX_RECENT];
 unsigned long recentTimes[MAX_RECENT];
@@ -67,8 +67,11 @@ int iPins[INPUT_COUNT]  = {12,5,4,0,14};
 int iPinValues[INPUT_COUNT];
 float battery_mult = 10.47/0.47*ADC_CAL/1024;//resistor divider, vref, max count
 float battery_volts = 12.0;
+#define MAX_EXPANDERS 100
 int zoneOverridePin = 13;
 int zoneOverrideState = 0;
+int maxExpander = -1;
+int expanderState[MAX_EXPANDERS];
 
 char* mainPage1 = "Main page goes here";
 const char mainPage[] =
@@ -165,6 +168,9 @@ void initIO() {
 	for(int i=0;i< MAX_RECENT;i++) {
 		recentPin[i] = -1;
 	}
+	for(int i=0;i< MAX_EXPANDERS;i++) {
+		expanderState[i] = 0;
+	}
 	digitalWrite(zoneOverridePin, 0);
 	pinMode(zoneOverridePin, OUTPUT);
 	zoneOverrideState = 0;
@@ -188,7 +194,7 @@ char* statusString(int i, int iValue) {
 		strcpy(statString,"Zone");
 		statString[4] = 48+i;
 		statString[5] = 0;
-	} else if(i<100) {
+	} else if(i <= (maxExpander + INPUT_COUNT)) {
 		strcpy(statString,"Exp ");
 		statString[4] = 48+(i-INPUT_COUNT)/10;
 		statString[5] = 48+(i-INPUT_COUNT)%10;
@@ -215,6 +221,11 @@ void checkStatus() {
 		String response = "Security Panel is running<BR>";
 		for(int i=0; i < INPUT_COUNT; i++) {
 			response += statusString(i, iPinValues[i]);
+		}
+		if(server.arg("expand") == "true") {
+			for(int i=0; i <= maxExpander; i++) {
+				response += statusString(i+INPUT_COUNT, expanderState[i]);
+			}
 		}
 		response +="Battery = " + String(battery_volts)+ "V<BR>Expansion Override ";
 		if(zoneOverrideState == 0)
@@ -247,15 +258,16 @@ void recentEvents() {
 	} else {
 		String response = "Recent events<BR>";
 		long minutes;
-		int recent = recentIndex;
+		int recent = recentIndex - 1;
+		if(recent < 0) recent = MAX_RECENT - 1;
 		for(int i = 0;i<MAX_RECENT;i++) {
-			if((recentPin[i]) >=0) {
+			if((recentPin[recent]) >=0) {
 				minutes = (elapsedTime - recentTimes[i]) * timeInterval / 60000;
 				response += String(minutes) + " minutes ago ";
 				response += statusString(recentPin[i], recentPinValue[i]);
 			}
-			recent++;
-			if(recent >= MAX_RECENT) recent = 0;
+			recent--;
+			if(recent < 0) recent = MAX_RECENT - 1;
 		}
 		server.send(200, "text/html", response);
 	}
@@ -290,10 +302,17 @@ void request() {
 /*
  Handle zone set request
 */
-void zoneSet(int zoneValue, int zoneDevice) {
-    Serial.println("Set Zone override to " + String(zoneValue) + " " + String(zoneDevice));
-	digitalWrite(zoneOverridePin, zoneValue);
-	zoneOverrideState = zoneValue;
+void zoneSet(int zoneDevice, int zoneValue) {
+    Serial.println("Set Zone expand device " + String(zoneDevice) + " to " + String(zoneValue));
+	if(zoneDevice > maxExpander) maxExpander = zoneDevice;
+	expanderState[zoneDevice] = zoneValue;
+	zoneOverrideState = 0;
+	//Or all expanders together to get final state. Any 1 Expander will trigger override.
+	for(int i = 0; i <= maxExpander;i++) {
+		zoneOverrideState |= expanderState[i];
+	}
+    Serial.println("Set Zone override to " + String(zoneOverrideState));
+	digitalWrite(zoneOverridePin, zoneOverrideState);
 	addRecentEvent(INPUT_COUNT+zoneDevice, zoneValue);
 }
 
