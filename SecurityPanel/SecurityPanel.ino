@@ -262,9 +262,9 @@ void recentEvents() {
 		if(recent < 0) recent = MAX_RECENT - 1;
 		for(int i = 0;i<MAX_RECENT;i++) {
 			if((recentPin[recent]) >=0) {
-				minutes = (elapsedTime - recentTimes[i]) * timeInterval / 60000;
+				minutes = (elapsedTime - recentTimes[recent]) * timeInterval / 60000;
 				response += String(minutes) + " minutes ago ";
-				response += statusString(recentPin[i], recentPinValue[i]);
+				response += statusString(recentPin[recent], recentPinValue[recent]);
 			}
 			recent--;
 			if(recent < 0) recent = MAX_RECENT - 1;
