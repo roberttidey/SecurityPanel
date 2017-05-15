@@ -12,10 +12,12 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <IFTTTMaker.h>
+#include <DNSServer.h>
+#include <WiFiManager.h>
+
 /*
  Web set up
 */
-
 #define AP_SSID "ssid"
 #define AP_PASSWORD "password"
 #define AP_MAX_WAIT 10
@@ -26,6 +28,17 @@
 #define AP_DNS 192,168,0,1
 #define AP_GATEWAY 192,168,0,1
 #define AP_SUBNET 255,255,255,0
+
+/*
+Wifi Manager Web set up
+If WM_NAME defined then use WebManager
+*/
+#define WM_NAME "securityWebSetup"
+#define WM_PASSWORD "password"
+#ifdef WM_NAME
+	WiFiManager wifiManager;
+#endif
+
 #define AP_AUTHID "1234"
 
 //IFTT and request key words
@@ -55,6 +68,9 @@ int timeInterval = 1000;
 unsigned long elapsedTime;
 char statString[32];
 
+#define WIFI_CHECK_TIMEOUT 30000
+unsigned long wifiCheckTime;
+
 //IO
 #define INPUT_COUNT 5
 #define BELL 0
@@ -63,7 +79,7 @@ char statString[32];
 #define ZONE3 3
 #define ZONE4 4
 #define ADC_CAL 1.080
-int iPins[INPUT_COUNT]  = {12,5,4,0,14};
+int iPins[INPUT_COUNT]  = {12,5,4,0,2};
 int iPinValues[INPUT_COUNT];
 float battery_mult = 10.47/0.47*ADC_CAL/1024;//resistor divider, vref, max count
 float battery_volts = 12.0;
@@ -106,7 +122,7 @@ const char mainPage[] =
 void setup() {
 	Serial.begin(115200);
 	Serial.println("Set up Security Panel");
-	wifiConnect();
+	wifiConnect(0);
 	
 	//Update service
 	Serial.println("Set up Web update service");
@@ -129,17 +145,34 @@ void setup() {
 /*
   Connect to local wifi with retries
 */
-int wifiConnect()
+int wifiConnect(int check)
 {
+	if(check) {
+		if(WiFi.status() != WL_CONNECTED) {
+			if((elapsedTime - wifiCheckTime) * timeInterval > WIFI_CHECK_TIMEOUT) {
+				Serial.println("Wifi connection timed out. Try to relink");
+			} else {
+				return 1;
+			}
+		} else {
+			wifiCheckTime = elapsedTime;
+			return 0;
+		}
+	}
+	wifiCheckTime = elapsedTime;
+#ifdef WM_NAME
+	Serial.println("Set up managed IRBlaster Web");
+	wifiManager.autoConnect(WM_NAME, WM_PASSWORD);
+#else
 	int retries = 0;
 	Serial.print("Connecting to AP");
-#ifdef AP_IP
-	IPAddress addr1(AP_IP);
-	IPAddress addr2(AP_DNS);
-	IPAddress addr3(AP_GATEWAY);
-	IPAddress addr4(AP_SUBNET);
-	WiFi.config(addr1, addr2, addr3, addr4);
-#endif
+	#ifdef AP_IP
+		IPAddress addr1(AP_IP);
+		IPAddress addr2(AP_DNS);
+		IPAddress addr3(AP_GATEWAY);
+		IPAddress addr4(AP_SUBNET);
+		WiFi.config(addr1, addr2, addr3, addr4);
+	#endif
 	WiFi.begin(AP_SSID, AP_PASSWORD);
 	while (WiFi.status() != WL_CONNECTED && retries < AP_MAX_WAIT) {
 		delay(1000);
@@ -155,7 +188,8 @@ int wifiConnect()
 	} else {
 		Serial.println("WiFi connection attempt failed"); 
 		return 0;
-	} 
+	}
+#endif
 }
 
 void initIO() {
@@ -357,4 +391,5 @@ void loop() {
 	processIO();
 	delay(timeInterval);
 	elapsedTime++;
+	wifiConnect(1);
 }
