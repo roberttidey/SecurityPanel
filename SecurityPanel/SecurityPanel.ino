@@ -4,6 +4,7 @@
  Allows extension of alarm sensors over wifi web requests
  R.J.Tidey 4 May 2017
 */
+#define ESP8266
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -162,7 +163,12 @@ int wifiConnect(int check)
 	wifiCheckTime = elapsedTime;
 #ifdef WM_NAME
 	Serial.println("Set up managed IRBlaster Web");
-	wifiManager.autoConnect(WM_NAME, WM_PASSWORD);
+	if(check == 0) {
+		wifiManager.setConfigPortalTimeout(180);
+		if(!wifiManager.autoConnect(WM_NAME, WM_PASSWORD)) WiFi.mode(WIFI_STA);
+	} else {
+		WiFi.begin();
+	}
 #else
 	int retries = 0;
 	Serial.print("Connecting to AP");
