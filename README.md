@@ -17,11 +17,8 @@ Expand sensors beyond 4 zones wirelessly
 	Up to 100 extra wireless sensors
 
 Config
-  Edit SecurityPanel.ino
+  Edit BaseConfig.h
 	Wifi set up
-      AP_SSID Local network ssid
-	  AP_PASSWORD 
-	  AP_IP If static IP to be used
 	  AP_PORT to access expansion service
 	AP_AUTHID Pincode or password to authorise web commands
 	update_username user for updating firmware
@@ -44,13 +41,14 @@ Expansion (could be esp8266 devices with sensors)
   If any Expansion device is 1 (Not OK) then the expansion override is triggered
 		
 Libraries
+  BaseSupport.h from https://github.com/roberttidey/BaseSupport
   ESP8266WiFi
   ESP8266WebServer
   WiFiClientSecure
   ArduinoJson
   ESP8266mDNS
   ESP8266HTTPUpdateServer
-  IFTTTMaker
+  IFTTTMaker use v6 ArduinoJson version at https://github.com/jodovaljow/arduino-ifttt-maker
 	
 Install procedure
 	Normal arduino esp8266 compile and upload

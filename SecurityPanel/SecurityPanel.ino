@@ -1,62 +1,27 @@
 /*
  SecurityPanel
- Monitors alarm and sends notifications
+ Monitors alarm and sends notifications to pushover or IFTTT
  Allows extension of alarm sensors over wifi web requests
  R.J.Tidey 4 May 2017
 */
 #define ESP8266
+#include "BaseConfig.h"
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
-#include <ESP8266mDNS.h>
-#include <ESP8266HTTPUpdateServer.h>
-#include <IFTTTMaker.h>
-#include <DNSServer.h>
-#include <WiFiManager.h>
-
-/*
- Web set up
-*/
-#define AP_SSID "ssid"
-#define AP_PASSWORD "password"
-#define AP_MAX_WAIT 10
-#define AP_PORT 80
-
-//uncomment next line to use static ip address instead of dhcp
-//#define AP_IP 192,168,0,200
-#define AP_DNS 192,168,0,1
-#define AP_GATEWAY 192,168,0,1
-#define AP_SUBNET 255,255,255,0
-
-/*
-Wifi Manager Web set up
-If WM_NAME defined then use WebManager
-*/
-#define WM_NAME "securityWebSetup"
-#define WM_PASSWORD "password"
-#ifdef WM_NAME
-	WiFiManager wifiManager;
+#ifdef USE_IFTTT
+	#include <IFTTTMaker.h>
 #endif
 
-#define AP_AUTHID "1234"
 
-//IFTT and request key words
-#define MAKER_KEY "MakerKey"
-#define EVENT_NAME "security" // Name of IFTTT trigger
+
 #define ZONE_SET "zoneSet" // sets zone override
-
-//For update service
-String host = "esp8266-security";
-const char* update_path = "/firmware";
-const char* update_username = "admin";
-const char* update_password = "password";
-
-ESP8266WebServer server(AP_PORT);
-WiFiClientSecure client;
-IFTTTMaker ifttt(MAKER_KEY, client);
-ESP8266HTTPUpdateServer httpUpdater;
+WiFiClientSecure https;
+#ifdef USE_IFTTT
+	//IFTT and request key words
+	#define EVENT_NAME "security" // Name of IFTTT trigger
+	IFTTTMaker ifttt(MAKER_KEY, https);
+#endif
 
 //History
 #define NAME_LEN 16
@@ -69,9 +34,6 @@ int timeInterval = 1000;
 unsigned long elapsedTime;
 char statString[32];
 
-#define WIFI_CHECK_TIMEOUT 30000
-unsigned long wifiCheckTime;
-
 //IO
 #define INPUT_COUNT 5
 #define BELL 0
@@ -79,7 +41,7 @@ unsigned long wifiCheckTime;
 #define ZONE2 2
 #define ZONE3 3
 #define ZONE4 4
-#define ADC_CAL 1.080
+#define ADC_CAL 0.976
 int iPins[INPUT_COUNT]  = {12,5,4,0,2};
 int iPinValues[INPUT_COUNT];
 float battery_mult = 10.47/0.47*ADC_CAL/1024;//resistor divider, vref, max count
@@ -89,6 +51,9 @@ int zoneOverridePin = 13;
 int zoneOverrideState = 0;
 int maxExpander = -1;
 int expanderState[MAX_EXPANDERS];
+
+bool isSendPush = false;
+String pushParameters;
 
 char* mainPage1 = "Main page goes here";
 const char mainPage[] =
@@ -117,86 +82,6 @@ const char mainPage[] =
 "</body>"
 "</html>";
 
-/*
- Initialise wifi, message handlers and ir sender
-*/
-void setup() {
-	Serial.begin(115200);
-	Serial.println("Set up Security Panel");
-	wifiConnect(0);
-	
-	//Update service
-	Serial.println("Set up Web update service");
-	MDNS.begin(host.c_str());
-	httpUpdater.setup(&server, update_path, update_username, update_password);
-	MDNS.addService("http", "tcp", AP_PORT);
-
-	Serial.println("Set up Web command handlers");
-	server.on("/status", checkStatus);
-	server.on("/request", request);
-	server.on("/recent", recentEvents);
-
-	server.on("/", indexHTML);
-	server.begin();
-	Serial.println("Set up IO system");
-	initIO();
-	Serial.println("Set up complete");
-}
-
-/*
-  Connect to local wifi with retries
-*/
-int wifiConnect(int check)
-{
-	if(check) {
-		if(WiFi.status() != WL_CONNECTED) {
-			if((elapsedTime - wifiCheckTime) * timeInterval > WIFI_CHECK_TIMEOUT) {
-				Serial.println("Wifi connection timed out. Try to relink");
-			} else {
-				return 1;
-			}
-		} else {
-			wifiCheckTime = elapsedTime;
-			return 0;
-		}
-	}
-	wifiCheckTime = elapsedTime;
-#ifdef WM_NAME
-	Serial.println("Set up managed IRBlaster Web");
-	if(check == 0) {
-		wifiManager.setConfigPortalTimeout(180);
-		if(!wifiManager.autoConnect(WM_NAME, WM_PASSWORD)) WiFi.mode(WIFI_STA);
-	} else {
-		WiFi.begin();
-	}
-#else
-	int retries = 0;
-	Serial.print("Connecting to AP");
-	#ifdef AP_IP
-		IPAddress addr1(AP_IP);
-		IPAddress addr2(AP_DNS);
-		IPAddress addr3(AP_GATEWAY);
-		IPAddress addr4(AP_SUBNET);
-		WiFi.config(addr1, addr2, addr3, addr4);
-	#endif
-	WiFi.begin(AP_SSID, AP_PASSWORD);
-	while (WiFi.status() != WL_CONNECTED && retries < AP_MAX_WAIT) {
-		delay(1000);
-		Serial.print(".");
-		retries++;
-	}
-	Serial.println("");
-	if(retries < AP_MAX_WAIT) {
-		Serial.print("WiFi connected ip ");
-		Serial.print(WiFi.localIP());
-		Serial.printf(":%d mac %s\r\n", AP_PORT, WiFi.macAddress().c_str());
-		return 1;
-	} else {
-		Serial.println("WiFi connection attempt failed"); 
-		return 0;
-	}
-#endif
-}
 
 void initIO() {
 	for(int i=0;i< INPUT_COUNT;i++) {
@@ -220,7 +105,7 @@ void initIO() {
  Check main page received from web
 */
 void indexHTML() {
-Serial.println("Main page requested");
+	Serial.println("Main page requested");
     server.send(200, "text/html", mainPage);
 }
 
@@ -332,10 +217,12 @@ void request() {
 		Serial.print(server.arg("value2"));
 		Serial.print(" :");
 		Serial.println(server.arg("value3"));
-		if(ifttt_notify(server.arg("event"), server.arg("value1"), server.arg("value2"), server.arg("value3")))
-			server.send(200, "text/html", "notify OK");
-		else
-			server.send(401, "text/html", "notify failed");
+		#ifdef USE_IFTTT
+			ifttt_notify(EVENT_NAME, "alarm", response, "");
+		#else
+			startPushNotification("security-test");
+		#endif
+		server.send(200, "text/html", "notify OK");
 	}
 }
 
@@ -357,17 +244,56 @@ void zoneSet(int zoneDevice, int zoneValue) {
 }
 
 /*
- Send notify trigger to IFTTT
+ Start notification to pushover
 */
-int ifttt_notify(String eventName, String value1, String value2, String value3) {
-  if(ifttt.triggerEvent(eventName, value1, value2, value3)){
-    Serial.println("Successfully sent");
-	return 1;
-  } else {
-    Serial.println("Failed!");
-	return 0;
-  }
+void startPushNotification(String message) {
+	if(isSendPush == false) {
+		// Form the string
+		pushParameters = "token=" + NOTIFICATION_APP + "&user=" + NOTIFICATION_USER + "&message=" + message;
+		isSendPush = true;
+		Serial.println("Connecting to push server");
+		https.connect("api.pushover.net", 443);
+	}
 }
+
+// Keep track of the pushover server connection status without holding 
+// up the code execution, and then send notification
+void updatePushServer(){
+    if(isSendPush == true) {
+		if(https.connected()) {
+			int length = pushParameters.length();
+			Serial.println("Posting push notification: " + pushParameters);
+			https.println("POST /1/messages.json HTTP/1.1");
+			https.println("Host: api.pushover.net");
+			https.println("Connection: close\r\nContent-Type: application/x-www-form-urlencoded");
+			https.print("Content-Length: ");
+			https.print(length);
+			https.println("\r\n");
+			https.print(pushParameters);
+
+			https.stop();
+			isSendPush = false;
+			Serial.println("Finished posting notification.");
+		} else {
+			Serial.println("Not connected.");
+		}
+    }
+}
+
+#ifdef USE_IFTTT
+	/*
+	 Send notify trigger to IFTTT
+	*/
+	int ifttt_notify(String eventName, String value1, String value2, String value3) {
+	  if(ifttt.triggerEvent(eventName, value1, value2, value3)){
+		Serial.println("Successfully sent");
+		return 1;
+	  } else {
+		Serial.println("Failed!");
+		return 0;
+	  }
+	}
+#endif
 
 /*
  Check Inputs
@@ -383,7 +309,11 @@ void processIO() {
 			response += statusString(i,val);
 			//if alarm and notify
 			if(i == BELL) {
-				ifttt_notify(EVENT_NAME, "alarm", response, "");
+				#ifdef USE_IFTTT
+						ifttt_notify(EVENT_NAME, "alarm", response, "");
+				#else
+						startPushNotification("security-alarm");
+				#endif
 			}
 		}
 		iPinValues[i] = val;
@@ -392,8 +322,23 @@ void processIO() {
 	battery_volts = (battery_volts * 15 + battery_mult * analogRead(A0)) / 16;
 }
 
+void setupStart() {
+	initIO();
+}
+
+void extraHandlers() {
+	server.on("/status", checkStatus);
+	server.on("/request", request);
+	server.on("/recent", recentEvents);
+	server.on("/", indexHTML);
+}
+
+void setupEnd() {
+}
+
 void loop() {
 	server.handleClient();
+	updatePushServer();
 	processIO();
 	delay(timeInterval);
 	elapsedTime++;
